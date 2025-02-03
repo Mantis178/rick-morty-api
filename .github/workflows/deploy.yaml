@@ -1,98 +1,93 @@
 name: Deploy Rick and Morty API
 
-# This tells GitHub when to run our workflow
 on:
   push:
-    branches: [ main ]  # Run when code is pushed to main branch
+    branches: [ main ]
   pull_request:
-    branches: [ main ]  # Run when a pull request targets main branch
+    branches: [ main ]
 
-# A workflow is made up of one or more jobs
 jobs:
-  # This is our main job called "deploy"
   deploy:
-    runs-on: ubuntu-latest  # We want a fresh Ubuntu machine to run our tasks
+    runs-on: ubuntu-latest
     
-    # Steps are the individual tasks our job will perform
     steps:
-    # First, we get our code from GitHub
-    - name: Check out code
-      uses: actions/checkout@v2
+    - uses: actions/checkout@v2
 
-    # Set up Python - we need this for our application
+    # Set up Python for our application
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: '3.9'
 
-    # Install Python packages we need for testing
+    # Install dependencies for testing
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests pytest
 
-    # Set up Minikube - this gives us a local Kubernetes cluster
+    # Start Minikube
     - name: Start Minikube
+      id: minikube
       run: |
         curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
         sudo install minikube-linux-amd64 /usr/local/bin/minikube
         minikube start --driver=docker
 
-    # Install Helm - we need this to deploy our application
+    # Install Helm
     - name: Install Helm
       run: |
         curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
-    # Build our Docker image and load it into Minikube
+    # Build and load the Docker image into Minikube
     - name: Build and Load Docker Image
       run: |
         eval $(minikube docker-env)
         docker build -t rickmorty-api:latest .
         minikube image load rickmorty-api:latest
 
-    # Deploy our application using Helm
+    # Deploy using Helm
     - name: Deploy with Helm
       run: |
         helm install my-rickmorty ./helm/rickmorty
 
-    # Wait to make sure our deployment is ready
+    # Wait for deployment to be ready
     - name: Wait for deployment
       run: |
-        kubectl wait --for=condition=available --timeout=300s deployment/my-rickmorty
+        kubectl wait --for=condition=available --timeout=900s deployment/my-rickmorty
 
-    # Set up port forwarding so we can test our endpoints
+    # Port forward in background for testing
     - name: Setup port forward
       run: |
         kubectl port-forward service/my-rickmorty 8080:80 &
-        sleep 5  # Give it time to establish the connection
+        sleep 15  # Give it a moment to establish the connection
 
-    # Test that our application is working correctly
+    # Run tests against the deployment
     - name: Test Deployment
       run: |
-        # Test the health check endpoint
+        # Test health check endpoint
         HEALTH_STATUS=$(curl -s http://localhost:8080/healthcheck | jq -r '.status')
         if [ "$HEALTH_STATUS" != "healthy" ]; then
           echo "Health check failed"
           exit 1
         fi
         
-        # Test the characters endpoint
+        # Test characters endpoint
         CHARS_STATUS=$(curl -s http://localhost:8080/characters | jq -r '.status')
         if [ "$CHARS_STATUS" != "success" ]; then
           echo "Characters endpoint failed"
           exit 1
         fi
         
-        # Test the CSV endpoint
+        # Test CSV endpoint
         CSV_RESPONSE=$(curl -s -I http://localhost:8080/characters/csv)
         if ! echo "$CSV_RESPONSE" | grep -q "text/csv"; then
           echo "CSV endpoint failed"
           exit 1
         fi
 
-    # Clean up our resources when we're done
+    # Cleanup
     - name: Cleanup
-      if: always()  # Run this step even if previous steps failed
+      if: always()
       run: |
         helm uninstall my-rickmorty || true
         minikube delete

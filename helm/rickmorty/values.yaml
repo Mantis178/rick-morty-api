@@ -36,10 +36,14 @@ resources:
 # Probes configuration
 probes:
   liveness:
-    initialDelaySeconds: 5
+    initialDelaySeconds: 30
     periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
     path: /healthcheck
   readiness:
-    initialDelaySeconds: 5
+    initialDelaySeconds: 30
     periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
     path: /healthcheck
