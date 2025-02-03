@@ -1,93 +1,98 @@
 name: Deploy Rick and Morty API
 
+# This tells GitHub when to run our workflow
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]  # Run when code is pushed to main branch
   pull_request:
-    branches: [ main ]
+    branches: [ main ]  # Run when a pull request targets main branch
 
+# A workflow is made up of one or more jobs
 jobs:
+  # This is our main job called "deploy"
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # We want a fresh Ubuntu machine to run our tasks
     
+    # Steps are the individual tasks our job will perform
     steps:
-    - uses: actions/checkout@v2
+    # First, we get our code from GitHub
+    - name: Check out code
+      uses: actions/checkout@v2
 
-    # Set up Python for our application
+    # Set up Python - we need this for our application
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: '3.9'
 
-    # Install dependencies for testing
+    # Install Python packages we need for testing
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install requests pytest
 
-    # Start Minikube
+    # Set up Minikube - this gives us a local Kubernetes cluster
     - name: Start Minikube
-      id: minikube
       run: |
         curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
         sudo install minikube-linux-amd64 /usr/local/bin/minikube
         minikube start --driver=docker
 
-    # Install Helm
+    # Install Helm - we need this to deploy our application
     - name: Install Helm
       run: |
         curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
 
-    # Build and load the Docker image into Minikube
+    # Build our Docker image and load it into Minikube
     - name: Build and Load Docker Image
       run: |
         eval $(minikube docker-env)
         docker build -t rickmorty-api:latest .
         minikube image load rickmorty-api:latest
 
-    # Deploy using Helm
+    # Deploy our application using Helm
     - name: Deploy with Helm
       run: |
         helm install my-rickmorty ./helm/rickmorty
 
-    # Wait for deployment to be ready
+    # Wait to make sure our deployment is ready
     - name: Wait for deployment
       run: |
         kubectl wait --for=condition=available --timeout=300s deployment/my-rickmorty
 
-    # Port forward in background for testing
+    # Set up port forwarding so we can test our endpoints
     - name: Setup port forward
       run: |
         kubectl port-forward service/my-rickmorty 8080:80 &
-        sleep 5  # Give it a moment to establish the connection
+        sleep 5  # Give it time to establish the connection
 
-    # Run tests against the deployment
+    # Test that our application is working correctly
     - name: Test Deployment
       run: |
-        # Test health check endpoint
+        # Test the health check endpoint
         HEALTH_STATUS=$(curl -s http://localhost:8080/healthcheck | jq -r '.status')
         if [ "$HEALTH_STATUS" != "healthy" ]; then
           echo "Health check failed"
           exit 1
         fi
         
-        # Test characters endpoint
+        # Test the characters endpoint
         CHARS_STATUS=$(curl -s http://localhost:8080/characters | jq -r '.status')
         if [ "$CHARS_STATUS" != "success" ]; then
           echo "Characters endpoint failed"
           exit 1
         fi
         
-        # Test CSV endpoint
+        # Test the CSV endpoint
         CSV_RESPONSE=$(curl -s -I http://localhost:8080/characters/csv)
         if ! echo "$CSV_RESPONSE" | grep -q "text/csv"; then
           echo "CSV endpoint failed"
           exit 1
         fi
 
-    # Cleanup
+    # Clean up our resources when we're done
     - name: Cleanup
-      if: always()
+      if: always()  # Run this step even if previous steps failed
       run: |
         helm uninstall my-rickmorty || true
         minikube delete
