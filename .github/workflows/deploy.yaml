@@ -1,0 +1,93 @@
+name: Deploy Rick and Morty API
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    # Set up Python for our application
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    # Install dependencies for testing
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pytest
+
+    # Start Minikube
+    - name: Start Minikube
+      id: minikube
+      run: |
+        curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        sudo install minikube-linux-amd64 /usr/local/bin/minikube
+        minikube start --driver=docker
+
+    # Install Helm
+    - name: Install Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+
+    # Build and load the Docker image into Minikube
+    - name: Build and Load Docker Image
+      run: |
+        eval $(minikube docker-env)
+        docker build -t rickmorty-api:latest .
+        minikube image load rickmorty-api:latest
+
+    # Deploy using Helm
+    - name: Deploy with Helm
+      run: |
+        helm install my-rickmorty ./helm/rickmorty
+
+    # Wait for deployment to be ready
+    - name: Wait for deployment
+      run: |
+        kubectl wait --for=condition=available --timeout=300s deployment/my-rickmorty
+
+    # Port forward in background for testing
+    - name: Setup port forward
+      run: |
+        kubectl port-forward service/my-rickmorty 8080:80 &
+        sleep 5  # Give it a moment to establish the connection
+
+    # Run tests against the deployment
+    - name: Test Deployment
+      run: |
+        # Test health check endpoint
+        HEALTH_STATUS=$(curl -s http://localhost:8080/healthcheck | jq -r '.status')
+        if [ "$HEALTH_STATUS" != "healthy" ]; then
+          echo "Health check failed"
+          exit 1
+        fi
+        
+        # Test characters endpoint
+        CHARS_STATUS=$(curl -s http://localhost:8080/characters | jq -r '.status')
+        if [ "$CHARS_STATUS" != "success" ]; then
+          echo "Characters endpoint failed"
+          exit 1
+        fi
+        
+        # Test CSV endpoint
+        CSV_RESPONSE=$(curl -s -I http://localhost:8080/characters/csv)
+        if ! echo "$CSV_RESPONSE" | grep -q "text/csv"; then
+          echo "CSV endpoint failed"
+          exit 1
+        fi
+
+    # Cleanup
+    - name: Cleanup
+      if: always()
+      run: |
+        helm uninstall my-rickmorty || true
+        minikube delete

@@ -1,0 +1,45 @@
+# Application configuration
+replicaCount: 2
+
+image:
+  repository: rickmorty-api
+  tag: latest
+  pullPolicy: Never  # Since we're using a local image
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 5000
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: ""
+      paths:
+        - path: /
+          pathType: Prefix
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+# Probes configuration
+probes:
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    path: /healthcheck
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    path: /healthcheck
