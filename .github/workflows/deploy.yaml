@@ -45,15 +45,29 @@ jobs:
         docker build -t rickmorty-api:latest .
         minikube image load rickmorty-api:latest
 
-    # Deploy using Helm
+# Deploy using Helm
     - name: Deploy with Helm
       run: |
         helm install my-rickmorty ./helm/rickmorty
+        echo "Checking initial deployment status..."
+        kubectl get deployments
+        kubectl get pods -o wide
+        echo "Detailed pod information:"
+        kubectl describe pods
 
     # Wait for deployment to be ready
     - name: Wait for deployment
       run: |
+        echo "Current deployment status before waiting:"
+        kubectl get deployments
+        kubectl get pods
+        echo "Starting wait for deployment..."
         kubectl wait --for=condition=available --timeout=900s deployment/my-rickmorty
+        echo "Deployment status after timeout or completion:"
+        kubectl get deployments
+        kubectl get pods -o wide
+        echo "Detailed pod information:"
+        kubectl describe pods
 
     # Port forward in background for testing
     - name: Setup port forward
