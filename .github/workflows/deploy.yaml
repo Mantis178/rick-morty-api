@@ -41,14 +41,17 @@ jobs:
     # Build and load the Docker image into Minikube
     - name: Build and Load Docker Image
       run: |
-        eval $(minikube -p minikube docker-env)
-        docker build -t rickmorty-api:latest .
-        echo "Verifying image is built:"
-        docker images | grep rickmorty-api
-        echo "Loading image into minikube:"
-        minikube image load rickmorty-api:latest
-        echo "Verifying image in minikube:"
-        minikube ssh 'docker images | grep rickmorty-api'
+        # Start by checking minikube's Docker environment
+        echo "Checking minikube Docker environment..."
+        minikube ssh docker info
+        
+        # Build the image directly in minikube's context
+        echo "Building image in minikube..."
+        minikube image build -t rickmorty-api:latest .
+        
+        # Verify the image is available in minikube
+        echo "Verifying image in minikube..."
+        minikube image ls | grep rickmorty-api
 
     # Deploy using Helm
     - name: Deploy with Helm
