@@ -41,11 +41,16 @@ jobs:
     # Build and load the Docker image into Minikube
     - name: Build and Load Docker Image
       run: |
-        eval $(minikube docker-env)
+        eval $(minikube -p minikube docker-env)
         docker build -t rickmorty-api:latest .
+        echo "Verifying image is built:"
+        docker images | grep rickmorty-api
+        echo "Loading image into minikube:"
         minikube image load rickmorty-api:latest
+        echo "Verifying image in minikube:"
+        minikube ssh 'docker images | grep rickmorty-api'
 
-# Deploy using Helm
+    # Deploy using Helm
     - name: Deploy with Helm
       run: |
         helm install my-rickmorty ./helm/rickmorty
@@ -55,7 +60,7 @@ jobs:
         echo "Detailed pod information:"
         kubectl describe pods
 
-# Wait for deployment to be ready
+    # Wait for deployment to be ready
     - name: Wait for deployment
       run: |
         echo "Checking minikube status and available images:"
