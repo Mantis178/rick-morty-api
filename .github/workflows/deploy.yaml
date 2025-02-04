@@ -55,25 +55,61 @@ jobs:
         echo "Detailed pod information:"
         kubectl describe pods
 
-    # Wait for deployment to be ready
+# Wait for deployment to be ready
     - name: Wait for deployment
       run: |
-        echo "Current deployment status before waiting:"
+        echo "Checking minikube status and available images:"
+        minikube status
+        minikube ssh 'docker images' # Shows what images are actually available in minikube
+        
+        echo "\nCurrent deployment status before waiting:"
         kubectl get deployments
         kubectl get pods
-        echo "Starting wait for deployment..."
-        kubectl wait --for=condition=available --timeout=900s deployment/my-rickmorty
-        echo "Deployment status after timeout or completion:"
-        kubectl get deployments
+        
+        echo "\nChecking namespace events (this shows chronological cluster activity):"
+        kubectl get events --sort-by='.metadata.creationTimestamp'
+        
+        echo "\nStarting wait for deployment..."
+        kubectl wait --for=condition=available --timeout=300s deployment/my-rickmorty &
+        WAIT_PID=$!
+        
+        # While we're waiting, check pod status every 30 seconds
+        for i in {1..30}; do
+          echo "\nChecking pod status (attempt $i):"
+          kubectl get pods
+          kubectl describe pods
+          
+          # Try to get logs from pods if they exist
+          echo "\nPod logs (if available):"
+          for pod in $(kubectl get pods -o name); do
+            echo "Logs from $pod:"
+            kubectl logs $pod --all-containers --prefix || echo "No logs available yet"
+          done
+          
+          # Check if the wait command is still running
+          if ! kill -0 $WAIT_PID 2>/dev/null; then
+            break
+          fi
+          
+          sleep 30
+        done
+        
+        # Wait for the original wait command to finish
+        wait $WAIT_PID || true
+        
+        echo "\nFinal deployment status:"
+        kubectl get deployments -o wide
         kubectl get pods -o wide
-        echo "Detailed pod information:"
         kubectl describe pods
+        
+        echo "\nFinal namespace events:"
+        kubectl get events --sort-by='.metadata.creationTimestamp'
 
     # Port forward in background for testing
     - name: Setup port forward
       run: |
         kubectl port-forward service/my-rickmorty 8080:80 &
-        sleep 15  # Give it a moment to establish the connection
+        sleep 5  # Give it a moment to establish the connection
 
     # Run tests against the deployment
     - name: Test Deployment
